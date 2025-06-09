@@ -55,12 +55,12 @@ impl<const PAGE_SIZE: usize> BaseAllocator for BitmapPageAllocator<PAGE_SIZE> {
         assert!(PAGE_SIZE.is_power_of_two());
 
         // Range for real:  [align_up(start, PAGE_SIZE), align_down(start + size, PAGE_SIZE))
-        let end = crate::align_down(start + size, PAGE_SIZE);
-        let start = crate::align_up(start, PAGE_SIZE);
+        let end = align_down(start + size, PAGE_SIZE);
+        let start = align_up(start, PAGE_SIZE);
         self.total_pages = (end - start) / PAGE_SIZE;
 
         // Calculate the base offset stored in the real [`BitAlloc`] instance.
-        self.base = crate::align_down(start, MAX_ALIGN_1GB);
+        self.base = align_down(start, MAX_ALIGN_1GB);
 
         // Range in bitmap: [start - self.base, start - self.base + total_pages * PAGE_SIZE)
         let start = start - self.base;
@@ -79,7 +79,7 @@ impl<const PAGE_SIZE: usize> PageAllocator for BitmapPageAllocator<PAGE_SIZE> {
 
     fn alloc_pages(&mut self, num_pages: usize, align_pow2: usize) -> AllocResult<usize> {
         // Check if the alignment is valid.
-        if align_pow2 > MAX_ALIGN_1GB || !crate::is_aligned(align_pow2, PAGE_SIZE) {
+        if align_pow2 > MAX_ALIGN_1GB || !is_aligned(align_pow2, PAGE_SIZE) {
             return Err(AllocError::InvalidParam);
         }
         let align_pow2 = align_pow2 / PAGE_SIZE;
@@ -109,8 +109,8 @@ impl<const PAGE_SIZE: usize> PageAllocator for BitmapPageAllocator<PAGE_SIZE> {
         // Check if the alignment is valid,
         // and the base address is aligned to the given alignment.
         if align_pow2 > MAX_ALIGN_1GB
-            || !crate::is_aligned(align_pow2, PAGE_SIZE)
-            || !crate::is_aligned(base, align_pow2)
+            || !is_aligned(align_pow2, PAGE_SIZE)
+            || !is_aligned(base, align_pow2)
         {
             return Err(AllocError::InvalidParam);
         }
@@ -132,7 +132,7 @@ impl<const PAGE_SIZE: usize> PageAllocator for BitmapPageAllocator<PAGE_SIZE> {
 
     fn dealloc_pages(&mut self, pos: usize, num_pages: usize) {
         assert!(
-            crate::is_aligned(pos, Self::PAGE_SIZE),
+            is_aligned(pos, Self::PAGE_SIZE),
             "pos must be aligned to PAGE_SIZE"
         );
         if match num_pages.cmp(&1) {
@@ -157,6 +157,24 @@ impl<const PAGE_SIZE: usize> PageAllocator for BitmapPageAllocator<PAGE_SIZE> {
     fn available_pages(&self) -> usize {
         self.total_pages - self.used_pages
     }
+}
+
+#[inline]
+const fn align_down(pos: usize, align: usize) -> usize {
+    pos & !(align - 1)
+}
+
+#[inline]
+const fn align_up(pos: usize, align: usize) -> usize {
+    (pos + align - 1) & !(align - 1)
+}
+
+/// Checks whether the address has the demanded alignment.
+///
+/// Equivalent to `addr % align == 0`, but the alignment must be a power of two.
+#[inline]
+const fn is_aligned(base_addr: usize, align: usize) -> bool {
+    base_addr & (align - 1) == 0
 }
 
 #[cfg(test)]
@@ -227,7 +245,7 @@ mod tests {
             assert_eq!(allocator.available_pages(), SIZE_2G / PAGE_SIZE);
 
             let addr = allocator.alloc_pages(num_pages, align).unwrap();
-            assert_eq!(addr, crate::align_up(TEST_BASE_ADDR, align));
+            assert_eq!(addr, align_up(TEST_BASE_ADDR, align));
             assert_eq!(allocator.used_pages(), num_pages);
             assert_eq!(allocator.available_pages(), SIZE_2G / PAGE_SIZE - num_pages);
 
@@ -255,7 +273,7 @@ mod tests {
             );
 
             let addr = allocator.alloc_pages(num_pages, align).unwrap();
-            assert!(crate::is_aligned(addr, align));
+            assert!(is_aligned(addr, align));
 
             addrs[i] = (addr, num_pages);
 
@@ -320,7 +338,7 @@ mod tests {
             num_pages *= 10;
             align <<= 9;
 
-            test_addr_base = crate::align_up(test_addr_base + num_pages * PAGE_SIZE, align);
+            test_addr_base = align_up(test_addr_base + num_pages * PAGE_SIZE, align);
 
             i += 1;
         }
